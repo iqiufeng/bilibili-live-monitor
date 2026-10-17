@@ -1,14 +1,29 @@
 import os
 import requests
 
-# 监控的 B 站直播间 ID（例如: 22747736）
-ROOM_ID = "22747736"
-
-# 从 GitHub Secrets 环境变量中读取 Server酱 SendKey
+ROOM_ID = "21686119"
 SERVERCHAN_SENDKEY = os.environ.get("SERVERCHAN_SENDKEY")
+STATUS_FILE = "live_status.txt"
+
+def get_last_status():
+    """读取上一次记录的状态 (1 为已开播并提醒，0 为未开播)"""
+    if os.path.exists(STATUS_FILE):
+        try:
+            with open(STATUS_FILE, "r", encoding="utf-8") as f:
+                return f.read().strip() == "1"
+        except Exception:
+            return False
+    return False
+
+def set_last_status(is_live):
+    """保存当前状态到文件"""
+    try:
+        with open(STATUS_FILE, "w", encoding="utf-8") as f:
+            f.write("1" if is_live else "0")
+    except Exception as e:
+        print(f"写入状态文件失败: {e}")
 
 def main():
-    # 使用新版 xlive 接口，可以一次性完整获取直播状态、标题和准确的主播昵称
     url = f"https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom?room_id={ROOM_ID}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -26,18 +41,28 @@ def main():
             room_id = room_data["room_id"]
             uname = anchor_data.get("uname", "未知主播")
             
-            if live_status == 1:
-                print(f"检测到开播！主播: {uname}, 标题: {title}")
-                send_serverchan_notice(title, uname, room_id)
+            is_live_now = (live_status == 1)
+            was_live_last_time = get_last_status()
+            
+            if is_live_now:
+                if not was_live_last_time:
+                    print(f"检测到新开播！主播: {uname}, 标题: {title}")
+                    send_serverchan_notice(title, uname, room_id)
+                    set_last_status(True)
+                else:
+                    print(f"主播 {uname} 正在直播中（已在开播时提醒过，跳过本次推送）。")
             else:
-                print(f"当前未开播。（当前主播：{uname}）")
+                if was_live_last_time:
+                    print(f"检测到主播 {uname} 已下播，重置状态。")
+                else:
+                    print(f"当前未开播。（当前主播：{uname}）")
+                set_last_status(False)
         else:
             print(f"B站 API 返回异常: {data.get('message')}")
     except Exception as e:
         print(f"请求发生异常: {e}")
 
 def send_serverchan_notice(title, uname, room_id):
-    """通过 Server酱 发送微信通知"""
     if not SERVERCHAN_SENDKEY:
         print("错误：未检测到 SERVERCHAN_SENDKEY 环境变量！")
         return
