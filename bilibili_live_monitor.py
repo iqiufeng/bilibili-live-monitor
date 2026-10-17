@@ -8,7 +8,8 @@ ROOM_ID = "22747736"
 SERVERCHAN_SENDKEY = os.environ.get("SERVERCHAN_SENDKEY")
 
 def main():
-    url = f"https://api.live.bilibili.com/room/v1/Room/get_info?id={ROOM_ID}"
+    # 使用新版 xlive 接口，可以一次性完整获取直播状态、标题和准确的主播昵称
+    url = f"https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByRoom?room_id={ROOM_ID}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -17,16 +18,19 @@ def main():
         response = requests.get(url, headers=headers, timeout=10)
         data = response.json()
         if data["code"] == 0:
-            room_data = data["data"]
-            # live_status: 1 为直播中
-            if room_data["live_status"] == 1:
-                title = room_data["title"]
-                room_id = room_data["room_id"]
-                uname = room_data.get("uname", "主播")
-                print(f"检测到开播！标题: {title}")
+            room_data = data["data"]["room_info"]
+            anchor_data = data["data"]["anchor_info"]["base_info"]
+            
+            live_status = room_data["live_status"]  # 1 为直播中
+            title = room_data["title"]
+            room_id = room_data["room_id"]
+            uname = anchor_data.get("uname", "未知主播")
+            
+            if live_status == 1:
+                print(f"检测到开播！主播: {uname}, 标题: {title}")
                 send_serverchan_notice(title, uname, room_id)
             else:
-                print("当前未开播。")
+                print(f"当前未开播。（当前主播：{uname}）")
         else:
             print(f"B站 API 返回异常: {data.get('message')}")
     except Exception as e:
@@ -41,7 +45,6 @@ def send_serverchan_notice(title, uname, room_id):
     url = f"https://sctapi.ftqq.com/{SERVERCHAN_SENDKEY}.send"
     live_url = f"https://live.bilibili.com/{room_id}"
     
-    # 支持 Markdown 语法
     desp = f"""
 ### 📢 B站直播间开播提醒
 
