@@ -1,7 +1,7 @@
 import os
 import requests
 
-ROOM_ID = "21686119"
+ROOM_ID = "22747736"
 PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN") # 从环境变量读取
 
 def main():
