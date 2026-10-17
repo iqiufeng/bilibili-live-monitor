@@ -30,7 +30,11 @@ def send_wechat(title, room_id):
         "content": f"直播间 {room_id} 正在直播：{title}",
         "template": "html"
     }
-    requests.post(url, json=payload, timeout=10)
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        print("PushPlus 返回结果：", response.text) # 打印 PushPlus 返回的响应信息
+    except Exception as e:
+        print("推送异常：", e)
 
 if __name__ == "__main__":
     main()
