@@ -1,7 +1,7 @@
 import os
 import requests
 
-ROOM_ID = "21686119"
+ROOM_ID = "22747736"
 SERVERCHAN_SENDKEY = os.environ.get("SERVERCHAN_SENDKEY")
 STATUS_FILE = "live_status.txt"
 
