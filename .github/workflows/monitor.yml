@@ -2,9 +2,8 @@ name: Bilibili Live Monitor
 
 on:
   schedule:
-    # 采用 UTC 时间。例如：北京时间每 5 分钟跑一次（注意 GitHub 最短支持 5 分钟）
     - cron: '*/5 * * * *'
-  workflow_dispatch: # 允许你在 GitHub 网页上「手动点按钮」测试运行
+  workflow_dispatch:
 
 jobs:
   run-monitor:
@@ -24,6 +23,7 @@ jobs:
 
       - name: Run script
         env:
-          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          WXPUSHER_APP_TOKEN: ${{ secrets.WXPUSHER_APP_TOKEN }}
+          WXPUSHER_UID: ${{ secrets.WXPUSHER_UID }}
         run: |
           python bilibili_live_monitor.py
