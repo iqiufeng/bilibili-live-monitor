@@ -1,7 +1,7 @@
 # bilibili-live-monitor
 B站直播间开播推送通知，通过 Server酱 发送微信通知。
-bilibili_live_monitor.py 使用 **GitHub Actions** 定期触发（免费、无需服务器）。
-bilibili_live_monitor_SCF.py 使用 **腾讯云函数** 定期触发（免费、无需服务器）。
+- bilibili_live_monitor.py 使用 **GitHub Actions** 定期触发（免费、无需服务器）。
+- bilibili_live_monitor_SCF.py 使用 **腾讯云函数** 定期触发（免费、无需服务器）。
 
 -- --
 **一、GitHub Actions配置指南**
