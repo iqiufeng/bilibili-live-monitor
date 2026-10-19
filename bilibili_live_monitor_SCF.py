@@ -1,4 +1,4 @@
-from datetime import datetime, time
+from datetime import datetime, time, timedelta, timezone
 import os
 import requests
 from urllib.parse import quote
@@ -34,12 +34,15 @@ def send_serverchan_notification(title, content):
 
 
 def check_dnd_time():
-  """检查当前是否处于勿扰时间段内"""
+  """检查当前是否处于勿扰时间段内（强制使用北京时间 UTC+8）"""
   if not DND_START or not DND_END:
     return False
 
   try:
-    now_time = datetime.now().time()
+    # 强制获取北京时间（UTC+8），完美解决云函数服务器默认时区为 UTC 的问题
+    BEIJING_TZ = timezone(timedelta(hours=8))
+    now_time = datetime.now(BEIJING_TZ).time()
+
     start_time = datetime.strptime(DND_START, "%H:%M").time()
     end_time = datetime.strptime(DND_END, "%H:%M").time()
 
@@ -51,8 +54,8 @@ def check_dnd_time():
 
     if is_dnd:
       print(
-          f"当前时间 {now_time.strftime('%H:%M:%S')} 处于勿扰模式 ({DND_START} ~"
-          " 内)，跳过本次轮询。"
+          f"当前北京时间 {now_time.strftime('%H:%M:%S')} 处于勿扰模式"
+          f" ({DND_START} ~ {DND_END})，跳过本次轮询。"
       )
       return True
   except Exception as e:
@@ -98,7 +101,9 @@ def main_handler(event, context):
         is_really_new = False
         try:
           live_time_dt = datetime.strptime(live_time_str, "%Y-%m-%d %H:%M:%S")
-          now_dt = datetime.now()
+          # 计算时间差时同样使用带有北京时间时区的时间对象进行对比
+          BEIJING_TZ = timezone(timedelta(hours=8))
+          now_dt = datetime.now(BEIJING_TZ).replace(tzinfo=None)
           diff_seconds = (now_dt - live_time_dt).total_seconds()
           print(f"距离该场次开播已过去: {diff_seconds:.1f} 秒")
 
