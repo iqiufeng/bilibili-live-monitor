@@ -1,7 +1,6 @@
 from datetime import datetime, time, timedelta, timezone
 import os
 import requests
-from urllib.parse import quote
 
 # 优先从环境变量中读取配置
 ROOM_ID = int(os.environ.get("ROOM_ID", 22747736))
@@ -12,23 +11,29 @@ ANCHOR_NAME = "3DM主播"
 DND_START = os.environ.get("DND_START", "")
 DND_END = os.environ.get("DND_END", "")
 
-# 简易状态记录
+# 状态记录（同时记录上一次的状态和具体的开播时间戳）
 _last_live_status = None
+_last_live_time = None
 
 
 def send_serverchan_notification(title, content):
-  """发送 Server酱 微信推送通知"""
+  """发送 Server酱 微信推送通知
+
+  使用 params 字典传参，避免双重编码并增加返回码校验
+  """
   if not SERVERCHAN_SENDKEY:
     print("错误：未检测到 SERVERCHAN_SENDKEY 环境变量，无法发送微信通知！")
     return
 
-  encoded_title = quote(title)
-  encoded_content = quote(content)
-  url = f"https://sctapi.ftqq.com/{SERVERCHAN_SENDKEY}.send?title={encoded_title}&desp={encoded_content}"
+  url = f"https://sctapi.ftqq.com/{SERVERCHAN_SENDKEY}.send"
+  payload = {"title": title, "desp": content}
 
   try:
-    response = requests.get(url, timeout=5)
-    print("Server酱 推送响应:", response.json())
+    response = requests.get(url, params=payload, timeout=5)
+    res_json = response.json()
+    print("Server酱 推送响应:", res_json)
+    if res_json.get("code") != 0:
+      print(f"Server酱 推送失败: {res_json.get('message')}")
   except Exception as e:
     print(f"发送 Server酱 通知异常: {e}")
 
@@ -39,7 +44,7 @@ def check_dnd_time():
     return False
 
   try:
-    # 强制获取北京时间（UTC+8），完美解决云函数服务器默认时区为 UTC 的问题
+    # 强制获取北京时间（UTC+8）
     BEIJING_TZ = timezone(timedelta(hours=8))
     now_time = datetime.now(BEIJING_TZ).time()
 
@@ -65,7 +70,7 @@ def check_dnd_time():
 
 
 def main_handler(event, context):
-  global _last_live_status
+  global _last_live_status, _last_live_time
 
   # 1. 优先检查勿扰模式
   if check_dnd_time():
@@ -76,9 +81,12 @@ def main_handler(event, context):
   )
   headers = {
       "User-Agent": (
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
-          " like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      )
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+          " (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      ),
+      "Referer": (
+          f"https://live.bilibili.com/{ROOM_ID}"
+      ),  # 增加 Referer 降低 B站 API 风控拦截概率
   }
 
   try:
@@ -92,46 +100,58 @@ def main_handler(event, context):
       live_time_str = room_info["live_time"]
 
       print(
-          f"当前状态检查：room_id = {ROOM_ID}, live_status = {live_status},"
-          f" 标题 = {room_title}, 开播时间 = {live_time_str}"
+          f"当前状态检查：room_id={ROOM_ID}, status={live_status},"
+          f" 标题={room_title}, 开播时间={live_time_str}"
       )
 
       if live_status == 1:
-        # 智能防重复判断：结合绝对开播时间，防止云函数冷启动导致状态重置引发重复推送
+        # 智能防重复判断
         is_really_new = False
         try:
           live_time_dt = datetime.strptime(live_time_str, "%Y-%m-%d %H:%M:%S")
-          # 计算时间差时同样使用带有北京时间时区的时间对象进行对比
           BEIJING_TZ = timezone(timedelta(hours=8))
           now_dt = datetime.now(BEIJING_TZ).replace(tzinfo=None)
           diff_seconds = (now_dt - live_time_dt).total_seconds()
+
           print(f"距离该场次开播已过去: {diff_seconds:.1f} 秒")
 
-          if diff_seconds <= 180 and _last_live_status != 1:
+          # 判断条件：开播3分钟内 且 (状态不是1 或 开播时间发生了变化，防止同一场直播重复推送)
+          if diff_seconds <= 180 and (
+              _last_live_status != 1 or _last_live_time != live_time_str
+          ):
             is_really_new = True
+
         except Exception as ex:
           print(f"解析时间异常: {ex}")
           if _last_live_status != 1:
             is_really_new = True
 
-        if is_really_new and _last_live_status != 1:
+        if is_really_new:
           push_title = f"🚨 {ANCHOR_NAME} 开播啦！"
           push_content = (
               f"直播间标题：{room_title}\n\n[点击进入直播间](https://live.bilibili.com/{ROOM_ID})"
           )
           send_serverchan_notification(push_title, push_content)
           _last_live_status = 1
+          _last_live_time = live_time_str
         else:
-          print("直播进行中（或属于容器冷启动恢复），非新开播，跳过重复推送。")
+          print(
+              "直播进行中（或属于容器冷启动恢复/超过3分钟），非新开播，跳过重复推送。"
+          )
           _last_live_status = 1
+          _last_live_time = live_time_str
       else:
         if _last_live_status == 1:
           print("检测到已下播，重置状态。")
         else:
           print("当前未开播。")
         _last_live_status = 0
+        _last_live_time = None
     else:
-      print(f"B站 API 返回业务异常，错误码：{data.get('code')}")
+      print(
+          f"B站 API 返回业务异常，错误码：{data.get('code')},"
+          f" 信息：{data.get('message')}"
+      )
 
   except Exception as e:
     print(f"请求发生异常: {e}")
